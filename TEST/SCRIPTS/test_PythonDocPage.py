@@ -1,5 +1,23 @@
+'''
+Nota: 
+Con i seguenti xpath individuati dalla selezione della lingua
+//select[@id="language_select"]/option[@value="es"]
+//select[@id="language_select"]/option[@value="fr"]
+//select[@id="language_select"]/option[@value="ja"]
+...
+si dovrebbe poter verificare il valore selezionato. Non ci sono riuscito,
+funziona per le prime due righe e va in eccezione quando seleziona la 
+lingua giapponese
+
+'''
+
+
+from cgitb import text
+from lib2to3.pgen2 import driver
 import sys
 from xml.sax.xmlreader import Locator
+
+from requests import status_codes
 sys.path.append(sys.path[0] + "/...")
  
 from PAGE_OBJECT_MODEL.PROJECT_PAGE_PYTHON.SRC.TEST_BASE.WebDriverSetup import WebDriverSetup
@@ -19,14 +37,15 @@ import logging
 import os
 import time
 
-xPathOptions = ["//option[. = 'Spanish']", "caricata pagina in lingua spagnola",
-                "//option[. = 'French']", "caricata pagina in lingua francese",
-                "//option[. = 'Japanese']", "caricata pagina in lingua giapponese",
-                "//option[. = 'Korean']", "caricata pagina in lingua Koreana",
-                "//option[. = 'Brazilian Portuguese']", "caricata pagina in lingua portoghese",
-                "//option[. = 'Simplified Chinese']", "caricata pagina in lingua cinese semplificato",
-                "//option[. = 'Traditional Chinese']", "caricata pagina in lingua cinese tradizionale",
-                "//option[. = 'English']", "caricata pagina in lingua dislessica"]
+
+xPathOptions = ["//option[. = 'Spanish']", "es", "caricata pagina in lingua spagnola",
+                "//option[. = 'French']", "fr", "caricata pagina in lingua francese",
+                "//option[. = 'Japanese']", "ja", "caricata pagina in lingua giapponese",
+                "//option[. = 'Korean']", "ko", "caricata pagina in lingua Koreana",
+                "//option[. = 'Brazilian Portuguese']", "pt-br", "caricata pagina in lingua portoghese",
+                "//option[. = 'Simplified Chinese']", "zh-cn", "caricata pagina in lingua cinese semplificato",
+                "//option[. = 'Traditional Chinese']", "zh-tw", "caricata pagina in lingua cinese tradizionale",
+                "//option[. = 'English']", "en", "caricata pagina in lingua dislessica"]
 
 # legge il file di configurazione dell'applicativo per il formato della data da inserire
 # nella riga del log file
@@ -37,8 +56,8 @@ class test_PythonDocPage(WebDriverSetup, unittest.TestCase, ):
  
     def testDocPage(self):
         driver = self.driver
-        self.driver.get(Locator.pythonHomePage)
-        self.driver.set_page_load_timeout(4)
+        driver.get(Locator.pythonHomePage)
+        driver.set_page_load_timeout(4)
         
         webPageTitle = "Welcome to Python.org"   
 
@@ -47,7 +66,7 @@ class test_PythonDocPage(WebDriverSetup, unittest.TestCase, ):
                 print("{} : Web Home Page '{}' caricata con successo".format(outRowFmt, webPageTitle))
                 self.assertEqual(driver.title, webPageTitle)
         except Exception as error:
-            print(error + " {} : Python Web Home Page, caricamento fallito".format(outRowFmt))
+            print(error.message + " {} : Python Web Home Page, caricamento fallito".format(outRowFmt))
         sleep(2)
 
         # Crea una istanza della classe per usare i suoi metodi
@@ -76,8 +95,8 @@ class test_PythonDocPage(WebDriverSetup, unittest.TestCase, ):
                 raise NameError('Errore di caricamento pagina')
 
         except Exception as error:
-            print(error+" {} : Python Software Foundation Page, caricamento fallito".format(outRowFmt))
-            logging.debug(error + " Python Software Foundation Page, caricamento fallito")
+            print(error.msg +" {} : Python Software Foundation Page, caricamento fallito".format(outRowFmt))
+            logging.debug(error.msg  + " Python Software Foundation Page, caricamento fallito")
         finally:
             print("{} : Controllo caricamento pagina Documentation effettuato".format(outRowFmt))
         sleep(2)
@@ -94,21 +113,56 @@ class test_PythonDocPage(WebDriverSetup, unittest.TestCase, ):
         # carica automaticamente le rispettive pagine
         self.cycleOnLanguages(driver)
 
+        # torna indietro alla pagina del cinese tradizionale
+        driver.back()
+        sleep(2)
+        lnk = driver.find_element_by_link_text('下載這些說明文件')
+        print ("{} : Tornato indietro alla selezione della lingua cinese".format(outRowFmt))
+
+        #fine Caso di test
         print ("{} : Fine metodo testDocPage()".format(outRowFmt))
 
 
     def cycleOnLanguages(self, driver):
-        for ix in range (0, len(xPathOptions), 2):
+        for ix in range (0, len(xPathOptions), 3):
+            # il secondo ciclo da 0 a 4 serve per evitare problemi di sincronia con la pagina web
             for i in range(4):
                 try:
-                    run_test = WebDriverWait(driver, 120).until( \
-                    EC.presence_of_element_located((By.XPATH, xPathOptions[ix])))
+                    run_test = WebDriverWait(driver, 120).until(EC.presence_of_element_located((By.XPATH, xPathOptions[ix])))
                     run_test.click()
-                    print ("{} : {}".format(outRowFmt, xPathOptions[ix+1]))
-                    sleep (2)
+                    sleep (1)
+                    print ("{} : {}".format(outRowFmt, xPathOptions[ix+2]))
+                    lnk = None
+                    #una volta selezionato l'elemento dal menu a tendina,
+                    # controlla il corretto caricamento con .find_element_by_link_text
+                    #<a href="download.html">Descarga esta documentación</a>
+                    if ix==0:
+                        lnk = driver.find_element_by_link_text('Descarga esta documentación')
+                    #<a href="download.html">Téléchargement de ces documentations</a>
+                    if ix==3:
+                        lnk = driver.find_element_by_link_text('Téléchargement de ces documentations')
+                    # <a href="download.html">これらのドキュメントのダウンロード</a>
+                    if ix==6:
+                        lnk = driver.find_element_by_link_text('これらのドキュメントのダウンロード')
+                    #<a href="download.html">이 문서 내려받기</a>
+                    if ix==9:
+                        lnk = driver.find_element_by_link_text('이 문서 내려받기')
+                    #<a href="download.html">Baixar esses documentos</a>
+                    if ix==12:
+                        lnk = driver.find_element_by_link_text('Baixar esses documentos')
+                    #<a href="download.html">下载这些文档</a>
+                    if ix==15:
+                        lnk = driver.find_element_by_link_text('下载这些文档')
+                    #<a href="download.html">下載這些說明文件</a>
+                    if ix==18:
+                        lnk = driver.find_element_by_link_text('下載這些說明文件')
                     break
                 except Exception as e:
+                    print("{} : {}".format(outRowFmt, e.msg))
+                    #assert genera un fail ed esce dal test
+                    #raise genera un error ed esce dal test
+                    #assert isinstance(lnk , webdriver.firefox.webelement.FirefoxWebElement)
                     raise e 
- 
+
 if __name__ == '__main__':
     unittest.main()

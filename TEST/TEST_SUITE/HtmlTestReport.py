@@ -58,11 +58,14 @@ import re
 from io import StringIO
 import sys
 import time
+from tkinter import CURRENT
 import unittest
 import shutil
 from jinja2 import Environment, FileSystemLoader
 
 from pyparsing import unicode
+import logging
+import logging.config
 
 
 from PAGE_OBJECT_MODEL.PROJECT_PAGE_PYTHON.TEST.SCRIPTS.test_PythonHomePage import test_PythonHomePage
@@ -153,9 +156,11 @@ STATUS = {
 DEFAULT_TITLE = 'Unit Test Report'
 DEFAULT_DESCRIPTION = 'Test report generation using HTMLTestRunner-rv'
 
-PKG_PATH = os.path.dirname(__file__)
-#Dino: setting report directory
-ROOT_PATH = os.path.dirname(PKG_PATH)
+CURRENT_DIR = os.path.dirname(__file__)
+PREV_DIR = os.path.dirname(CURRENT_DIR)
+PKG_PATH = os.path.dirname(PREV_DIR)+os.sep+'COMMON'
+#Dino: setting report directory and root path
+ROOT_PATH = os.path.dirname(PREV_DIR)
 TestResult = unittest.TestResult
 
 
@@ -297,7 +302,7 @@ class _TestResult(TestResult):
 
 class HTMLTestRunner:
     def __init__(self, log=None, output=None, verbosity=1, title=None, description=None, report_name='report',
-                 open_in_browser=False, reportNameFormat=None):
+                 open_in_browser=False, reportNameFormat=None, cfg = None):
         """
         HTMLTestRunner
         Args:
@@ -420,8 +425,13 @@ class HTMLTestRunner:
             stop_time=(self.stopTime - self.startTime),
         )
 
-        shutil.copy(os.path.join(PKG_PATH, 'static', 'stylesheet.css'), f'./{self.output}/stylesheet.css')
+        #Dino: should be parameterized
+        #shutil.copy(os.path.join(PKG_PATH, 'static', 'stylesheet.css'), f'./{self.output}/stylesheet.css')
+        styleSheet = str(cfg.get_css_style_sheet())
+        shutil.copy(os.path.join(PKG_PATH, 'static', styleSheet), f'./{self.output}/{styleSheet}')
         shutil.copy(os.path.join(PKG_PATH, 'static', 'script.js'), f'./{self.output}/script.js')
+        shutil.copy(os.path.join(PKG_PATH, 'static', 'cap.png'), f'./{self.output}/cap.png')
+
         with open(self.html_report_file_name, 'w') as file:
             file.write(output)
         if self.open_in_browser:
@@ -531,16 +541,22 @@ class HTMLTestRunner:
 
 
 if __name__ == "__main__":
-    """
+
+    loggerConfigFileName = "Logging.ini"
+    configDir = 'CONFIG'
     currentDir = os.path.dirname(os.path.realpath(__file__))
     upDir =  os.path.dirname(currentDir)
     baseDir =  os.path.dirname(upDir)
     path_Dir = str(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
-    pathReport = str(currentDir + os.sep + reportNameDir)
     logCfgDir = baseDir + os.sep + configDir + os.sep + loggerConfigFileName
-    """
+
     # legge il file di configurazione dell'applicativo
     cfg = ReadConfig()
+
+    # legge il file di configurazione del log
+    logging.config.fileConfig(logCfgDir, disable_existing_loggers=False)
+    myLogger = logging.getLogger('logger_Admin')
+    myLogger.info('START PROGRAM')
 
     # reportDir, controlla che sia una directory reale
     reportDir = cfg.get_report_dir()
@@ -549,14 +565,39 @@ if __name__ == "__main__":
     else:
         reportDir='REPORTS'
 
+    myLogger.info('LOADING TEST SUITE')
     homePage = unittest.TestLoader().loadTestsFromTestCase(test_PythonHomePage)
     swFundationPage = unittest.TestLoader().loadTestsFromTestCase(test_PythonSwFundationPage)
     pyDocPage = unittest.TestLoader().loadTestsFromTestCase(test_PythonDocPage)
     testSuite = unittest.TestSuite([homePage, swFundationPage, pyDocPage])
- 
+
+    #abilita il logger urllib3 per verificare la connessione e i messaggi HTTP dell'applicativo
+    log_level = cfg.get_log_level()
+    if log_level == 'WARNING':
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+    elif log_level == 'DEBUG':
+        logging.getLogger("urllib3").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("urllib3").setLevel(logging.INFO)
+
+
     runner = HTMLTestRunner(log=True, verbosity=2, output=reportDir, 
                             title='Test Report', report_name = cfg.get_report_name(),
-                            open_in_browser=True, description="Riepilogo dei casi di Unit Test applicati alla pagina Python.org", 
-                            reportNameFormat = cfg.get_log_date_format())
+                            open_in_browser=True, description="Riepilogo dei casi di Unit Test applicati alla pagina web Python.org", 
+                            reportNameFormat = cfg.get_log_date_format(),
+                            cfg=cfg)
 
-    runner.run(testSuite)
+    rc = runner.run(testSuite)
+
+
+    print ("error count = ", rc.error_count)
+    print ("failure count = ", rc.failure_count)
+    print ("success count = ", rc.success_count)
+    myLogger.info("success count {} - = error count = {} - failure count = {}".format(rc.success_count, rc.error_count, rc.failure_count))
+
+    if rc.error_count or rc.failure_count:
+        myLogger.debug('\n\nSummary: %d errors and %d failures reported\n'% (rc.error_count, rc.failure_count))
+    else:
+        myLogger.info('EXE UNIT TEST SUITE: OK')
+
+
